@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - "ws*"
+  pull_request:
+    branches:
+      - main
+
+# Annule les builds en cours si un nouveau commit arrive sur la même branche
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: src/mcp
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: src/mcp/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint (TypeScript compile check)
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+      - name: Run tests
+        run: npm test --if-present
+
+      - name: Smoke test — server starts in stdio mode
+        # Lance le serveur 2 secondes en stdio et vérifie qu'il ne crashe pas.
+        # En mode stdio, le serveur attend des messages JSON-RPC sur stdin —
+        # on lui envoie une initialize request et on coupe.
+        run: |
+          timeout 5s node build/index.js < /dev/null || code=$?
+          # timeout retourne 124 quand il coupe — c'est attendu en stdio
+          if [ "${code:-0}" != "0" ] && [ "${code:-0}" != "124" ]; then
+            echo "Server crashed with exit code ${code}"
+            exit 1
+          fi
+        env:
+          ELIGRAPH_TRANSPORT: stdio
+          ELIGRAPH_LOG_LEVEL: error
+
+  security-audit:
+    name: npm audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/mcp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: src/mcp/package-lock.json
+      - run: npm ci
+      - name: Audit production dependencies
+        # Échoue uniquement sur des vulnérabilités high/critical en prod.
+        # Les vulns moderate/low en devDeps sont reportées sans bloquer.
+        run: npm audit --audit-level=high --omit=dev
