@@ -37,7 +37,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint (TypeScript compile check)
+      - name: Type check
         run: npx tsc --noEmit
 
       - name: Build
@@ -47,16 +47,18 @@ jobs:
         run: npm test --if-present
 
       - name: Smoke test — server starts in stdio mode
-        # Lance le serveur 2 secondes en stdio et vérifie qu'il ne crashe pas.
-        # En mode stdio, le serveur attend des messages JSON-RPC sur stdin —
-        # on lui envoie une initialize request et on coupe.
+        # Utilise `npm start` qui appelle `node build/main.js` (le vrai entry point Lokka).
+        # En mode stdio, le serveur attend des messages JSON-RPC sur stdin et ne s'arrête
+        # pas tout seul — on lui envoie un /dev/null vide et on coupe après 5s.
+        # timeout retourne 124 quand il coupe le process — c'est attendu.
         run: |
-          timeout 5s node build/index.js < /dev/null || code=$?
-          # timeout retourne 124 quand il coupe — c'est attendu en stdio
-          if [ "${code:-0}" != "0" ] && [ "${code:-0}" != "124" ]; then
-            echo "Server crashed with exit code ${code}"
+          timeout 5s npm start < /dev/null
+          code=$?
+          if [ "$code" != "0" ] && [ "$code" != "124" ]; then
+            echo "Server crashed with exit code $code"
             exit 1
           fi
+          echo "Smoke test OK (exit code: $code)"
         env:
           ELIGRAPH_TRANSPORT: stdio
           ELIGRAPH_LOG_LEVEL: error
