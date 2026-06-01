@@ -7,6 +7,14 @@ yarn-error.log*
 lerna-debug.log*
 .pnpm-debug.log*
 
+# EliGraph — TypeScript compiled output
+src/mcp/build/
+
+# EliGraph — Local env files
+.env
+.env.local
+.env.*.local
+
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
