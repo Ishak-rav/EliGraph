@@ -1,8 +1,8 @@
-// Shared constants for the Lokka MCP Server
+// Shared constants for EliGraph (forked from merill/lokka)
 
-export const LokkaClientId = "a9bac4c3-af0d-4292-9453-9da89e390140";
-export const LokkaDefaultTenantId = "common";
-export const LokkaDefaultRedirectUri = "http://localhost:3000";
+export const EliGraphClientId = "a9bac4c3-af0d-4292-9453-9da89e390140";
+export const EliGraphDefaultTenantId = "common";
+export const EliGraphDefaultRedirectUri = "http://localhost:3000";
 
 // Default Graph API version based on USE_GRAPH_BETA environment variable
 export const getDefaultGraphApiVersion = (): "v1.0" | "beta" => {
