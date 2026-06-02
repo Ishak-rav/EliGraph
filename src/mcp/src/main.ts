@@ -9,6 +9,7 @@ import { logger } from "./logger.js";
 import { AuthManager, AuthConfig, AuthMode } from "./auth.js";
 import { EliGraphClientId, EliGraphDefaultTenantId, EliGraphDefaultRedirectUri, getDefaultGraphApiVersion } from "./constants.js";
 import { startHttpTransport } from "./transports/http.js";
+import { evaluate as evaluateGuardrails } from "./guardrails/engine.js";
 import type { AuthCtx, ServerFactory } from "./types.js";
 
 // Set up global fetch for the Microsoft Graph client
@@ -42,6 +43,7 @@ export function buildServer(ctx: AuthCtx): McpServer {
       graphApiVersion: z.enum(["v1.0", "beta"]).optional().default(defaultGraphApiVersion as "v1.0" | "beta").describe(`Microsoft Graph API version to use (default: ${defaultGraphApiVersion})`),
       fetchAll: z.boolean().optional().default(false).describe("Set to true to automatically fetch all pages for list results (e.g., users, groups). Default is false."),
       consistencyLevel: z.string().optional().describe("Graph API ConsistencyLevel header. ADVISED to be set to 'eventual' for Graph GET requests using advanced query parameters ($filter, $count, $search, $orderby)."),
+      confirm: z.boolean().optional().default(false).describe("Set to true to confirm a previously guardrail-blocked operation (require_confirmation actions only). Has no effect on hard-blocked operations."),
     },
     async ({
       apiType,
@@ -54,6 +56,7 @@ export function buildServer(ctx: AuthCtx): McpServer {
       graphApiVersion,
       fetchAll,
       consistencyLevel,
+      confirm: bypassGuardrail,
     }: {
       apiType: "graph" | "azure";
       path: string;
@@ -65,8 +68,26 @@ export function buildServer(ctx: AuthCtx): McpServer {
       graphApiVersion: "v1.0" | "beta";
       fetchAll: boolean;
       consistencyLevel?: string;
+      confirm: boolean;
     }) => {
       const effectiveGraphApiVersion = !useGraphBeta ? "v1.0" : graphApiVersion;
+
+      // Guardrail check — runs before any network call
+      const guardrail = evaluateGuardrails(
+        { apiType, method, path, body },
+        bypassGuardrail,
+      );
+      if (!guardrail.allowed) {
+        logger.info(
+          { event: "guardrail_intercept", action: guardrail.action, rule_id: guardrail.ruleId, method, path },
+          "Tool call intercepted by guardrail",
+        );
+        return {
+          content: [{ type: "text" as const, text: guardrail.message }],
+          isError: guardrail.action === "block",
+        };
+      }
+
       const auditStart = Date.now();
 
       logger.info({

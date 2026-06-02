@@ -170,8 +170,8 @@ eligraph/
 | WS2 | Config Zod centralisée + refus app-only | ✅ Terminé | WS1 | PR #5 — `src/config/env.ts`, guard app-only |
 | WS3 | Audit trail JSON (stdout + fichier rotatif) | ✅ Terminé | WS0 | PR #6 — pino, redaction, audit structuré |
 | WS4 | Observabilité Grafana + Loki | ⏳ À faire | WS3 | |
-| WS5 | Business rules / guardrails | ⏳ À faire | WS3 | |
-| WS6 | Déploiement VPS + nginx + Let's Encrypt | 🔄 En cours | WS1, WS2, WS3 | Branche `ws6-deploy` |
+| WS5 | Business rules / guardrails | 🔄 En cours | WS3 | Branche `ws5-guardrails` |
+| WS6 | Déploiement VPS + nginx + Let's Encrypt | ✅ Terminé | WS1, WS2, WS3 | PR #7 — Dockerfile, nginx, certbot, deploy.yml |
 | WS7 | Connecteur Copilot Studio | ⏳ À faire | WS6 | |
 
 **Total MVP (WS0 à WS3 + WS6)** : environ 10 à 17 jours de dev effectif.
