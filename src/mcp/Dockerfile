@@ -16,7 +16,9 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=builder /app/build ./build
 
 # Non-root user for security
-RUN addgroup -S eligraph && adduser -S eligraph -G eligraph
+RUN addgroup -S eligraph && adduser -S eligraph -G eligraph \
+    && mkdir -p /var/log/eligraph \
+    && chown -R eligraph:eligraph /var/log/eligraph
 USER eligraph
 
 EXPOSE 3000

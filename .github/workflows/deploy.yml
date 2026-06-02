@@ -5,10 +5,11 @@ on:
     branches:
       - main
 
-# One deploy at a time — cancel pending if a new push arrives
+# One deploy at a time — in-progress deploy is never cancelled;
+# additional pushes queue and run in order.
 concurrency:
   group: deploy-production
-  cancel-in-progress: false   # never cancel an in-progress deploy
+  cancel-in-progress: false
 
 jobs:
   build-push:
