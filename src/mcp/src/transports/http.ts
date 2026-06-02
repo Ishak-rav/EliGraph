@@ -9,7 +9,10 @@ export async function startHttpTransport(
   ctx: AuthCtx,
 ): Promise<void> {
   const port = parseInt(process.env.ELIGRAPH_HTTP_PORT ?? "3000", 10);
-  const host = process.env.ELIGRAPH_HTTP_HOST ?? "0.0.0.0";
+  if (Number.isNaN(port) || port < 1 || port > 65535) {
+    throw new Error(`Invalid ELIGRAPH_HTTP_PORT: "${process.env.ELIGRAPH_HTTP_PORT}". Must be an integer between 1 and 65535.`);
+  }
+  const host = process.env.ELIGRAPH_HTTP_HOST ?? "127.0.0.1";
 
   const app = express();
   app.use(express.json());
@@ -18,13 +21,15 @@ export async function startHttpTransport(
   const sessions = new Map<string, StreamableHTTPServerTransport>();
 
   app.all("/mcp", async (req, res) => {
-    const sessionId = req.headers["mcp-session-id"] as string | undefined;
+    const raw = req.headers["mcp-session-id"];
+    const sessionId: string | undefined = Array.isArray(raw) ? raw[0] : raw;
 
-    if (sessionId && sessions.has(sessionId)) {
-      // Existing session — route to its transport
-      const transport = sessions.get(sessionId)!;
-      await transport.handleRequest(req, res, req.body);
-      return;
+    if (sessionId) {
+      const transport = sessions.get(sessionId);
+      if (transport) {
+        await transport.handleRequest(req, res, req.body);
+        return;
+      }
     }
 
     if (req.method !== "POST") {

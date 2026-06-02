@@ -371,9 +371,6 @@ export function buildServer(ctx: AuthCtx): McpServer {
 
         const { InteractiveBrowserCredential, DeviceCodeCredential } = await import("@azure/identity");
 
-        ctx.authManager = null;
-        ctx.graphClient = null;
-
         const scopeString = scopes.map(s => `https://graph.microsoft.com/${s}`).join(' ');
         logger.info(`Requesting fresh token with scopes: ${scopeString}`);
 
@@ -404,11 +401,16 @@ export function buildServer(ctx: AuthCtx): McpServer {
         }
 
         const authConfig: AuthConfig = { mode: AuthMode.Interactive, tenantId, clientId, redirectUri };
-        ctx.authManager = new AuthManager(authConfig);
-        (ctx.authManager as any).credential = newCredential;
+        const newAuthManager = new AuthManager(authConfig);
+        (newAuthManager as any).credential = newCredential;
 
-        const authProvider = ctx.authManager.getGraphAuthProvider();
-        ctx.graphClient = Client.initWithMiddleware({ authProvider });
+        const authProvider = newAuthManager.getGraphAuthProvider();
+        const newGraphClient = Client.initWithMiddleware({ authProvider });
+
+        // Atomic swap: keep old context alive until new one is fully ready,
+        // so concurrent HTTP sessions don't see a null authManager window.
+        ctx.authManager = newAuthManager;
+        ctx.graphClient = newGraphClient;
 
         const tokenStatus = await ctx.authManager.getTokenStatus();
         logger.info(`Successfully acquired fresh token with scopes: ${scopes.join(', ')}`);
@@ -523,6 +525,9 @@ async function main() {
   }
 
   const transport = process.env.ELIGRAPH_TRANSPORT ?? "stdio";
+  if (transport !== "stdio" && transport !== "http") {
+    throw new Error(`Invalid ELIGRAPH_TRANSPORT: "${transport}". Accepted values: "stdio", "http".`);
+  }
   logger.info(`EliGraph starting — transport: ${transport}`);
 
   if (transport === "http") {
