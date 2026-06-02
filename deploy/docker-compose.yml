@@ -1,0 +1,56 @@
+services:
+  eligraph:
+    image: ghcr.io/ishak-rav/eligraph:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Override: inside Docker, eligraph must bind 0.0.0.0 so the nginx
+      # container can reach it via the internal bridge network.
+      # The .env default (127.0.0.1) is correct for standalone/stdio mode only.
+      ELIGRAPH_HTTP_HOST: "0.0.0.0"
+    expose:
+      - "3000"
+    volumes:
+      - logs:/var/log/eligraph
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/eligraph.conf:ro
+      - certbot-certs:/etc/letsencrypt:ro
+      - certbot-www:/var/www/certbot:ro
+    networks:
+      - internal
+    depends_on:
+      - eligraph
+
+  # certbot is used only for one-shot certificate operations (see nginx/certbot-init.sh).
+  # Renewal is handled by a host-level cron — see nginx/certbot-init.sh for the cron command.
+  certbot:
+    image: certbot/certbot:latest
+    volumes:
+      - certbot-certs:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
+    profiles:
+      - certbot   # never started by `docker compose up` unless --profile certbot
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  logs:
+  certbot-certs:
+  certbot-www:
