@@ -39,6 +39,9 @@ const envSchema = z.object({
   CERTIFICATE_PATH: z.string().optional(),
   CERTIFICATE_PASSWORD: z.string().optional(),
 
+  // Audit
+  ELIGRAPH_AUDIT_FILE: z.string().optional(),
+
   // Graph
   USE_GRAPH_BETA: booleanFromString.default("true"),
 });

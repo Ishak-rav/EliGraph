@@ -1,48 +1,49 @@
-import { appendFileSync } from "fs";
-import { join } from "path";
+import pino from "pino";
+import { config } from "./config/env.js";
 
-const LOG_FILE = join(
-  import.meta.dirname,
-  "mcp-server.log",
-);
+// Paths whose values must never appear in logs (tokens, secrets, passwords).
+const REDACTED_PATHS = [
+  "Authorization",
+  "authorization",
+  "*.Authorization",
+  "*.authorization",
+  "accessToken",
+  "*.accessToken",
+  "token",
+  "*.token",
+  "*.secret",
+  "*.password",
+  "*.clientSecret",
+  "CLIENT_SECRET",
+];
 
-function formatMessage(
-  level: string,
-  message: string,
-  data?: unknown,
-): string {
-  const timestamp = new Date().toISOString();
-  const dataStr = data
-    ? `\n${JSON.stringify(data, null, 2)}`
-    : "";
-  return `[${timestamp}] [${level}] ${message}${dataStr}\n`;
+function buildTransport():
+  | pino.TransportSingleOptions
+  | pino.TransportMultiOptions
+  | undefined {
+  if (!config.ELIGRAPH_AUDIT_FILE) {
+    return undefined; // pino writes to stdout by default
+  }
+
+  // Dual output: stdout + append to audit file
+  return {
+    targets: [
+      {
+        target: "pino/file",
+        options: { destination: 1 },
+        level: config.ELIGRAPH_LOG_LEVEL,
+      },
+      {
+        target: "pino/file",
+        options: { destination: config.ELIGRAPH_AUDIT_FILE, mkdir: true },
+        level: config.ELIGRAPH_LOG_LEVEL,
+      },
+    ],
+  };
 }
 
-export const logger = {
-  info(message: string, data?: unknown) {
-    const logMessage = formatMessage(
-      "INFO",
-      message,
-      data,
-    );
-    appendFileSync(LOG_FILE, logMessage);
-  },
-
-  error(message: string, error?: unknown) {
-    const logMessage = formatMessage(
-      "ERROR",
-      message,
-      error,
-    );
-    appendFileSync(LOG_FILE, logMessage);
-  },
-
-  // debug(message: string, data?: unknown) {
-  //   const logMessage = formatMessage(
-  //     "DEBUG",
-  //     message,
-  //     data,
-  //   );
-  //   appendFileSync(LOG_FILE, logMessage);
-  // },
-};
+export const logger = pino({
+  level: config.ELIGRAPH_LOG_LEVEL,
+  redact: { paths: REDACTED_PATHS, censor: "[REDACTED]" },
+  transport: buildTransport(),
+});

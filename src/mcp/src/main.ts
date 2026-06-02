@@ -67,8 +67,18 @@ export function buildServer(ctx: AuthCtx): McpServer {
       consistencyLevel?: string;
     }) => {
       const effectiveGraphApiVersion = !useGraphBeta ? "v1.0" : graphApiVersion;
+      const auditStart = Date.now();
 
-      logger.info(`Executing EliGraph-Microsoft tool with params: apiType=${apiType}, path=${path}, method=${method}, graphApiVersion=${effectiveGraphApiVersion}, fetchAll=${fetchAll}, consistencyLevel=${consistencyLevel}`);
+      logger.info({
+        event: "tool_call",
+        mcp_tool: "EliGraph-Microsoft",
+        api_type: apiType,
+        method: method.toUpperCase(),
+        path,
+        api_version: apiType === "graph" ? effectiveGraphApiVersion : apiVersion,
+        fetch_all: fetchAll,
+      }, "tool call started");
+
       let determinedUrl: string | undefined;
 
       try {
@@ -228,9 +238,28 @@ export function buildServer(ctx: AuthCtx): McpServer {
           }
         }
 
+        logger.info({
+          event: "tool_result",
+          mcp_tool: "EliGraph-Microsoft",
+          api_type: apiType,
+          method: method.toUpperCase(),
+          path,
+          success: true,
+          duration_ms: Date.now() - auditStart,
+        }, "tool call completed");
+
         return { content: [{ type: "text" as const, text: resultText }] };
       } catch (error: any) {
-        logger.error(`Error in EliGraph-Microsoft tool (apiType: ${apiType}, path: ${path}, method: ${method}):`, error);
+        logger.error({
+          event: "tool_result",
+          mcp_tool: "EliGraph-Microsoft",
+          api_type: apiType,
+          method: method.toUpperCase(),
+          path,
+          success: false,
+          duration_ms: Date.now() - auditStart,
+          err: error instanceof Error ? { message: error.message, code: (error as any).statusCode } : String(error),
+        }, "tool call failed");
         if (!determinedUrl) {
           determinedUrl = apiType === 'graph'
             ? `https://graph.microsoft.com/${effectiveGraphApiVersion}`
