@@ -31,10 +31,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 20
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
           cache-dependency-path: src/mcp/package-lock.json
 
@@ -63,6 +63,8 @@ jobs:
         env:
           ELIGRAPH_TRANSPORT: stdio
           ELIGRAPH_LOG_LEVEL: error
+          # Client-token mode : le serveur démarre sans tenter d'auth (token fourni via tool)
+          USE_CLIENT_TOKEN: "true"
 
   security-audit:
     name: npm audit
@@ -74,7 +76,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
           cache-dependency-path: src/mcp/package-lock.json
       - run: npm ci

@@ -306,7 +306,7 @@ server.tool(
     accessToken: z.string().describe("The access token obtained from Microsoft Graph authentication"),
     expiresOn: z.string().optional().describe("Token expiration time in ISO format (optional, defaults to 1 hour from now)")
   },
-  async ({ accessToken, expiresOn }) => {
+  async ({ accessToken, expiresOn }: { accessToken: string; expiresOn?: string }) => {
     try {
       const expirationDate = expiresOn ? new Date(expiresOn) : undefined;
       
@@ -388,7 +388,7 @@ server.tool(
   {
     scopes: z.array(z.string()).describe("Array of Microsoft Graph permission scopes to request (e.g., ['User.Read', 'Mail.ReadWrite', 'Directory.Read.All'])")
   },
-  async ({ scopes }) => {
+  async ({ scopes }: { scopes: string[] }) => {
     try {
       // Check if we're in interactive mode
       if (!authManager || authManager.getAuthMode() !== AuthMode.Interactive) {
