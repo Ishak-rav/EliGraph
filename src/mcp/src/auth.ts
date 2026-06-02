@@ -33,7 +33,7 @@ function parseJwtScopes(token: string): string[] {
     logger.info("No scopes found in JWT token");
     return [];
   } catch (error) {
-    logger.error("Error parsing JWT token for scopes", error);
+    logger.error({ err: error }, "Error parsing JWT token for scopes");
     return [];
   }
 }
@@ -222,7 +222,7 @@ export class AuthManager {
       }
       logger.info("Authentication successful");
     } catch (error) {
-      logger.error("Authentication test failed", error);
+      logger.error({ err: error }, "Authentication test failed");
       throw error;
     }
   }
@@ -275,7 +275,7 @@ export class AuthManager {
               scopes: scopes
             };
           } catch (error) {
-            logger.error("Error parsing token scopes in getTokenStatus", error);
+            logger.error({ err: error }, "Error parsing token scopes in getTokenStatus");
             return tokenStatus;
           }
         }
@@ -295,7 +295,7 @@ export class AuthManager {
           };
         }
       } catch (error) {
-        logger.error("Error getting token for scope parsing", error);
+        logger.error({ err: error }, "Error getting token for scope parsing");
       }
     }
     
