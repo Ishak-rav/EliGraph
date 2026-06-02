@@ -42,6 +42,10 @@ const envSchema = z.object({
   // Audit
   ELIGRAPH_AUDIT_FILE: z.string().optional(),
 
+  // CORS — comma-separated list of allowed origins for the HTTP transport.
+  // Defaults to Copilot Studio and Power Platform origins.
+  ELIGRAPH_CORS_ORIGINS: z.string().optional(),
+
   // Graph
   USE_GRAPH_BETA: booleanFromString.default("true"),
 });

@@ -1,0 +1,240 @@
+openapi: "3.0.3"
+info:
+  title: EliGraph — Microsoft Graph connector
+  description: |
+    REST proxy for Microsoft Graph API, designed for use as a
+    Power Platform custom connector in Copilot Studio.
+
+    Authentication: OAuth 2.0 Authorization Code flow (Entra ID).
+    The caller's token is forwarded to Microsoft Graph — all calls
+    are performed with delegated permissions, never app-only.
+
+    Guardrails are enforced server-side: destructive operations
+    require explicit confirmation (confirm: true).
+  version: "0.1.0"
+  contact:
+    name: Ishak Chennouf — Eliadis
+    url: https://github.com/Ishak-rav/EliGraph
+
+servers:
+  - url: https://YOUR_DOMAIN
+    description: Production VPS
+
+security:
+  - entraOAuth: []
+
+paths:
+  /api/graph:
+    post:
+      operationId: callGraphApi
+      summary: Execute a Microsoft Graph API request
+      description: |
+        Executes a delegated Microsoft Graph API call on behalf of the
+        authenticated user. The user's Bearer token (from OAuth) is
+        forwarded to Graph — no app-only permissions are used.
+
+        Guardrails are evaluated before each call:
+        - Hard-blocked operations (e.g. write on "Global Admins") return HTTP 403.
+        - Operations requiring confirmation return HTTP 202 with action="require_confirmation".
+          Re-send the same request with confirm=true to proceed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GraphRequest"
+            examples:
+              list_users:
+                summary: List all users
+                value:
+                  method: get
+                  path: /users
+                  queryParams:
+                    $select: id,displayName,userPrincipalName
+                    $top: "50"
+              get_user:
+                summary: Get a specific user
+                value:
+                  method: get
+                  path: /users/john@contoso.com
+              update_user:
+                summary: Update user department
+                value:
+                  method: patch
+                  path: /users/john@contoso.com
+                  body:
+                    department: "Engineering"
+              list_groups:
+                summary: List groups
+                value:
+                  method: get
+                  path: /groups
+                  queryParams:
+                    $filter: "startswith(displayName,'IT')"
+                    consistencyLevel: eventual
+      responses:
+        "200":
+          description: Graph API call succeeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GraphSuccess"
+        "202":
+          description: Guardrail — confirmation required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuardrailConfirmation"
+        "400":
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Operation blocked by guardrail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuardrailBlock"
+        "500":
+          description: Internal server error or Graph API error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /healthz:
+    get:
+      operationId: healthCheck
+      summary: Health check
+      security: []
+      responses:
+        "200":
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+
+components:
+  securitySchemes:
+    entraOAuth:
+      type: oauth2
+      description: |
+        Microsoft Entra ID (Azure AD) OAuth 2.0 Authorization Code flow.
+        Replace YOUR_TENANT_ID and YOUR_CLIENT_ID with the EliGraph App Registration values.
+      flows:
+        authorizationCode:
+          authorizationUrl: https://login.microsoftonline.com/YOUR_TENANT_ID/oauth2/v2.0/authorize
+          tokenUrl: https://login.microsoftonline.com/YOUR_TENANT_ID/oauth2/v2.0/token
+          scopes:
+            "https://graph.microsoft.com/User.Read": Read signed-in user profile
+            "https://graph.microsoft.com/Directory.Read.All": Read all directory data
+            "https://graph.microsoft.com/User.ReadWrite.All": Read and write all user profiles
+            "https://graph.microsoft.com/Group.ReadWrite.All": Read and write all groups
+
+  schemas:
+    GraphRequest:
+      type: object
+      required:
+        - method
+        - path
+      properties:
+        method:
+          type: string
+          enum: [get, post, put, patch, delete]
+          description: HTTP method to use
+        path:
+          type: string
+          description: Graph API path (e.g. /users, /groups/{id}/members)
+          example: /users
+        queryParams:
+          type: object
+          additionalProperties:
+            type: string
+          description: OData query parameters ($filter, $select, $top, $orderby…)
+        body:
+          type: object
+          additionalProperties: true
+          description: Request body for POST/PUT/PATCH operations
+        graphApiVersion:
+          type: string
+          enum: [v1.0, beta]
+          default: v1.0
+          description: Graph API version
+        confirm:
+          type: boolean
+          default: false
+          description: |
+            Set to true to confirm a previously blocked require_confirmation
+            operation. Has no effect on hard-blocked (403) operations.
+
+    GraphSuccess:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          additionalProperties: true
+          description: Raw Microsoft Graph API response
+
+    GuardrailConfirmation:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        guardrail:
+          type: boolean
+          example: true
+        action:
+          type: string
+          example: require_confirmation
+        ruleId:
+          type: string
+          example: confirm-delete-user
+        message:
+          type: string
+          example: "⚠️ Guardrail [confirm-delete-user]: Require confirmation before deleting a user object\nOperation: DELETE /users/john@contoso.com\nCall again with confirm: true to proceed."
+
+    GuardrailBlock:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        guardrail:
+          type: boolean
+          example: true
+        action:
+          type: string
+          example: block
+        ruleId:
+          type: string
+          example: block-privileged-groups
+        message:
+          type: string
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+        statusCode:
+          type: integer
