@@ -63,6 +63,8 @@ jobs:
         env:
           ELIGRAPH_TRANSPORT: stdio
           ELIGRAPH_LOG_LEVEL: error
+          # Client-token mode : le serveur démarre sans tenter d'auth (token fourni via tool)
+          USE_CLIENT_TOKEN: "true"
 
   security-audit:
     name: npm audit
