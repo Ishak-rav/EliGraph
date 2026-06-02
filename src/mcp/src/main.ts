@@ -4,6 +4,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { Client, PageIterator, PageCollection } from "@microsoft/microsoft-graph-client";
 import fetch from 'isomorphic-fetch'; // Required polyfill for Graph client
+import { config } from "./config/env.js";
 import { logger } from "./logger.js";
 import { AuthManager, AuthConfig, AuthMode } from "./auth.js";
 import { EliGraphClientId, EliGraphDefaultTenantId, EliGraphDefaultRedirectUri, getDefaultGraphApiVersion } from "./constants.js";
@@ -13,8 +14,7 @@ import type { AuthCtx, ServerFactory } from "./types.js";
 // Set up global fetch for the Microsoft Graph client
 (global as any).fetch = fetch;
 
-// Check USE_GRAPH_BETA environment variable
-const useGraphBeta = process.env.USE_GRAPH_BETA !== 'false';
+const useGraphBeta = config.USE_GRAPH_BETA;
 const defaultGraphApiVersion = getDefaultGraphApiVersion();
 
 // ---------------------------------------------------------------------------
@@ -443,26 +443,23 @@ export function buildServer(ctx: AuthCtx): McpServer {
 // Entry point
 // ---------------------------------------------------------------------------
 async function main() {
-  const useCertificate = process.env.USE_CERTIFICATE === 'true';
-  const useInteractive = process.env.USE_INTERACTIVE === 'true';
-  const useClientToken = process.env.USE_CLIENT_TOKEN === 'true';
-  const initialAccessToken = process.env.ACCESS_TOKEN;
+  const { USE_CLIENT_TOKEN, USE_INTERACTIVE, USE_CERTIFICATE } = config;
 
-  let authMode: AuthMode;
-
-  const enabledModes = [useClientToken, useInteractive, useCertificate].filter(Boolean);
+  const enabledModes = [USE_CLIENT_TOKEN, USE_INTERACTIVE, USE_CERTIFICATE].filter(Boolean);
   if (enabledModes.length > 1) {
     throw new Error("Multiple authentication modes enabled. Please enable only one of USE_CLIENT_TOKEN, USE_INTERACTIVE, or USE_CERTIFICATE.");
   }
 
-  if (useClientToken) {
+  let authMode: AuthMode;
+
+  if (USE_CLIENT_TOKEN) {
     authMode = AuthMode.ClientProvidedToken;
-  } else if (useInteractive) {
+  } else if (USE_INTERACTIVE) {
     authMode = AuthMode.Interactive;
-  } else if (useCertificate) {
+  } else if (USE_CERTIFICATE) {
     authMode = AuthMode.Certificate;
   } else {
-    const hasClientCredentials = process.env.TENANT_ID && process.env.CLIENT_ID && process.env.CLIENT_SECRET;
+    const hasClientCredentials = config.TENANT_ID && config.CLIENT_ID && config.CLIENT_SECRET;
     if (hasClientCredentials) {
       authMode = AuthMode.ClientCredentials;
     } else {
@@ -471,30 +468,36 @@ async function main() {
     }
   }
 
+  // Guard: refuse app-only unless operator explicitly opts in
+  if (authMode === AuthMode.ClientCredentials && !config.ELIGRAPH_ALLOW_APP_ONLY) {
+    process.stderr.write(
+      "[ELIGRAPH] FATAL: App-only authentication (CLIENT_SECRET without OBO) is disabled by default.\n" +
+      "Set ELIGRAPH_ALLOW_APP_ONLY=true to opt in explicitly.\n" +
+      "See ARCHITECTURE.md §8 for details.\n",
+    );
+    process.exit(1);
+  }
+
   logger.info(`Starting with authentication mode: ${authMode}`);
 
   let tenantId: string | undefined;
   let clientId: string | undefined;
 
   if (authMode === AuthMode.Interactive) {
-    tenantId = process.env.TENANT_ID || EliGraphDefaultTenantId;
-    clientId = process.env.CLIENT_ID || EliGraphClientId;
+    tenantId = config.TENANT_ID ?? EliGraphDefaultTenantId;
+    clientId = config.CLIENT_ID ?? EliGraphClientId;
     logger.info(`Interactive mode using tenant ID: ${tenantId}, client ID: ${clientId}`);
   } else {
-    tenantId = process.env.TENANT_ID;
-    clientId = process.env.CLIENT_ID;
+    tenantId = config.TENANT_ID;
+    clientId = config.CLIENT_ID;
   }
 
-  const clientSecret = process.env.CLIENT_SECRET;
-  const certificatePath = process.env.CERTIFICATE_PATH;
-  const certificatePassword = process.env.CERTIFICATE_PASSWORD;
-
   if (authMode === AuthMode.ClientCredentials) {
-    if (!tenantId || !clientId || !clientSecret) {
+    if (!tenantId || !clientId || !config.CLIENT_SECRET) {
       throw new Error("Client credentials mode requires TENANT_ID, CLIENT_ID, and CLIENT_SECRET");
     }
   } else if (authMode === AuthMode.Certificate) {
-    if (!tenantId || !clientId || !certificatePath) {
+    if (!tenantId || !clientId || !config.CERTIFICATE_PATH) {
       throw new Error("Certificate mode requires TENANT_ID, CLIENT_ID, and CERTIFICATE_PATH");
     }
   }
@@ -503,11 +506,11 @@ async function main() {
     mode: authMode,
     tenantId,
     clientId,
-    clientSecret,
-    accessToken: initialAccessToken,
-    redirectUri: process.env.REDIRECT_URI,
-    certificatePath,
-    certificatePassword,
+    clientSecret: config.CLIENT_SECRET,
+    accessToken: config.ACCESS_TOKEN,
+    redirectUri: config.REDIRECT_URI,
+    certificatePath: config.CERTIFICATE_PATH,
+    certificatePassword: config.CERTIFICATE_PASSWORD,
   };
 
   // Shared auth context — all sessions (HTTP or stdio) read from this object
@@ -515,7 +518,7 @@ async function main() {
 
   ctx.authManager = new AuthManager(authConfig);
 
-  if (authMode !== AuthMode.ClientProvidedToken || initialAccessToken) {
+  if (authMode !== AuthMode.ClientProvidedToken || config.ACCESS_TOKEN) {
     await ctx.authManager.initialize();
     const authProvider = ctx.authManager.getGraphAuthProvider();
     ctx.graphClient = Client.initWithMiddleware({ authProvider });
@@ -524,17 +527,12 @@ async function main() {
     logger.info("Started in client-token mode. Use set-access-token tool to authenticate.");
   }
 
-  const transport = process.env.ELIGRAPH_TRANSPORT ?? "stdio";
-  if (transport !== "stdio" && transport !== "http") {
-    throw new Error(`Invalid ELIGRAPH_TRANSPORT: "${transport}". Accepted values: "stdio", "http".`);
-  }
-  logger.info(`EliGraph starting — transport: ${transport}`);
+  logger.info(`EliGraph starting — transport: ${config.ELIGRAPH_TRANSPORT}`);
 
-  if (transport === "http") {
+  if (config.ELIGRAPH_TRANSPORT === "http") {
     const createServer: ServerFactory = (c) => buildServer(c);
     await startHttpTransport(createServer, ctx);
   } else {
-    // Default: stdio
     const server = buildServer(ctx);
     const stdioTransport = new StdioServerTransport();
     await server.connect(stdioTransport);

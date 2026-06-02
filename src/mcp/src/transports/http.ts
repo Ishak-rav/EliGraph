@@ -1,6 +1,7 @@
 import express from "express";
 import { randomUUID } from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { config } from "../config/env.js";
 import { logger } from "../logger.js";
 import type { AuthCtx, ServerFactory } from "../types.js";
 
@@ -8,11 +9,8 @@ export async function startHttpTransport(
   createServer: ServerFactory,
   ctx: AuthCtx,
 ): Promise<void> {
-  const port = parseInt(process.env.ELIGRAPH_HTTP_PORT ?? "3000", 10);
-  if (Number.isNaN(port) || port < 1 || port > 65535) {
-    throw new Error(`Invalid ELIGRAPH_HTTP_PORT: "${process.env.ELIGRAPH_HTTP_PORT}". Must be an integer between 1 and 65535.`);
-  }
-  const host = process.env.ELIGRAPH_HTTP_HOST ?? "127.0.0.1";
+  const port = config.ELIGRAPH_HTTP_PORT;
+  const host = config.ELIGRAPH_HTTP_HOST;
 
   const app = express();
   app.use(express.json());
