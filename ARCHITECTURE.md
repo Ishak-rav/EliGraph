@@ -11,17 +11,18 @@
 
 | Domaine | Décision | Justification |
 |---|---|---|
-| Runtime | Node.js 20 LTS | Aligné avec Lokka et l'env de dev |
-| Langage | TypeScript strict | Lokka est déjà en TS |
-| HTTP server | Express | Conserver l'écosystème Lokka, éviter un refactor |
-| MCP SDK | `@modelcontextprotocol/sdk` ≥ 1.10 | Premier release supportant Streamable HTTP |
+| Runtime | Node.js 22 LTS | Node 20 actions GitHub dépréciées le 16 juin 2026 |
+| Langage | TypeScript strict + `isolatedModules` | `isolatedModules` réduit la consommation mémoire de tsc |
+| HTTP server | Express 5 | Conservé de Lokka, async error handling natif en v5 |
+| MCP SDK | `@modelcontextprotocol/sdk` ≥ 1.26.0 | Versions ≤ 1.25.3 : 3 CVE high (ReDoS, data leak, DNS rebinding) |
 | Transport remote | Streamable HTTP (spec 2025-03-26) | SSE déprécié au profit de Streamable HTTP |
-| Auth Microsoft | `@azure/identity` (déjà présent) | `OnBehalfOfCredential` + `AzureCliCredential` + `DeviceCodeCredential` |
-| Logging | pino + pino-http | JSON structuré natif, format Loki-compatible |
+| Auth Microsoft | `@azure/identity` 4.x (déjà présent) | `OnBehalfOfCredential` + `AzureCliCredential` + `DeviceCodeCredential` |
+| Logging | `logger.ts` existant (à migrer vers pino — WS3) | Migration pino prévue en WS3 |
 | Tests | vitest + supertest | Léger, ESM natif |
-| Conteneur | Docker multi-stage, base `node:20-alpine` | Image finale légère |
+| Conteneur | Docker multi-stage, base `node:22-alpine` | Image finale légère |
 | Reverse proxy | nginx + Let's Encrypt (certbot) | Standard sur VPS |
 | CI/CD | GitHub Actions → GHCR → SSH deploy | Simple et auto-hébergé |
+| Config | Zod centralisé dans `src/config/env.ts` | Validation au démarrage, aucun `process.env.X` dispersé (WS2) |
 
 ## 2. Couches de l'architecture
 
@@ -162,18 +163,24 @@ eligraph/
 
 ## 4. Roadmap par workstreams
 
-| WS | Sujet | Estimation | Dépend de |
-|---|---|---|---|
-| WS0 | Setup repo, fork, CI minimale | 1-2 j | — |
-| WS1 | HTTP wrapper /mcp Streamable | 3-5 j | WS0 |
-| WS2 | Auth déléguée OBO + refus app-only | 3-5 j | WS1 |
-| WS3 | Audit trail JSON (stdout + fichier) | 2-3 j | WS0 |
-| WS4 | Observabilité Grafana + Loki | 2-3 j | WS3 |
-| WS5 | Business rules / guardrails | 3-5 j | WS3 |
-| WS6 | Déploiement VPS + nginx + LE | 1-2 j | WS1, WS2, WS3 |
-| WS7 | Connecteur Copilot Studio | 3-5 j | WS6 |
+| WS | Sujet | Statut | Dépend de | Notes |
+|---|---|---|---|---|
+| WS0 | Setup repo, fork, CI minimale, rebranding Lokka → EliGraph | ✅ Terminé | — | Mergé sur `main` (PR #1 à #3) |
+| WS1 | Transport HTTP Streamable `/mcp` | ✅ Terminé | WS0 | PR #4 en cours de CI — `ELIGRAPH_TRANSPORT=http\|stdio` |
+| WS2 | Config Zod centralisée + refus app-only | 🔄 En cours | WS1 | Branche `ws2-auth` |
+| WS3 | Audit trail JSON (stdout + fichier rotatif) | ⏳ À faire | WS0 | |
+| WS4 | Observabilité Grafana + Loki | ⏳ À faire | WS3 | |
+| WS5 | Business rules / guardrails | ⏳ À faire | WS3 | |
+| WS6 | Déploiement VPS + nginx + Let's Encrypt | ⏳ À faire | WS1, WS2, WS3 | |
+| WS7 | Connecteur Copilot Studio | ⏳ À faire | WS6 | |
 
 **Total MVP (WS0 à WS3 + WS6)** : environ 10 à 17 jours de dev effectif.
+
+### Dette technique identifiée en WS1
+
+- `add-graph-permission` ouvre un navigateur interactif — cassé en mode HTTP (serveur distant). À corriger en WS2 : désactiver le tool ou implémenter un flow OAuth avec redirect URI selon le transport actif.
+- Pas de CORS sur `/mcp` — bloquant pour Copilot Studio et clients browser. À ajouter avant WS7.
+- Smoke test CI uniquement en mode stdio. Un smoke test HTTP (démarrage + POST initialize) reste à écrire.
 
 ## 5. Pré-requis Microsoft à préparer en parallèle
 
@@ -281,80 +288,72 @@ jobs:
           npm test
 ```
 
-## 7. WS1 — détail (HTTP wrapper)
+## 7. WS1 — détail (HTTP wrapper) ✅
 
-Trois étapes principales :
+Implémenté dans la PR #4 (`ws1-http-transport` → `dev`).
 
-**Étape 1 — Détection du mode dans `index.ts`**
+**Fichiers créés/modifiés :**
 
-```typescript
-// src/index.ts (nouveau ou refactor de l'existant)
-import { startStdio } from "./transports/stdio.js";
-import { startHttp } from "./transports/http.js";
+| Fichier | Rôle |
+|---|---|
+| `src/mcp/src/types.ts` | `AuthCtx` (authManager + graphClient partagés) + `ServerFactory` |
+| `src/mcp/src/transports/http.ts` | Express `/mcp` — sessions `Map<sessionId, transport>`, une `McpServer` par session |
+| `src/mcp/src/main.ts` | `buildServer(ctx)` factory extraite, `main()` branche sur `ELIGRAPH_TRANSPORT` |
 
-const mode = process.env.ELIGRAPH_TRANSPORT ?? "stdio";
+**Points de sécurité appliqués en WS1 :**
+- `ELIGRAPH_HTTP_HOST` par défaut `127.0.0.1` (pas `0.0.0.0`)
+- Port invalide → `throw` immédiat avec message explicite
+- Header `mcp-session-id` normalisé (`string[]` → `string`)
+- Lookup session via `get()` unique (pas de race `has()`+`get()`)
+- Swap atomique du contexte auth dans `add-graph-permission`
+- `ELIGRAPH_TRANSPORT` invalide → `throw` immédiat
 
-if (mode === "http") {
-  await startHttp();
-} else {
-  await startStdio();
-}
-```
-
-**Étape 2 — Implémentation `transports/http.ts`**
-
-```typescript
-import express from "express";
-import { randomUUID } from "node:crypto";
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { logger } from "../audit/logger.js";
-import { buildMcpServer } from "../server.js";   // factory à extraire de l'index actuel
-
-export async function startHttp() {
-  const app = express();
-  app.use(express.json({ limit: "4mb" }));
-
-  // Healthcheck
-  app.get("/healthz", (_req, res) => res.status(200).json({ ok: true }));
-
-  // Endpoint MCP unique
-  app.all("/mcp", async (req, res) => {
-    const sessionId = req.header("mcp-session-id") ?? randomUUID();
-
-    // À ce stade WS1 : pas encore d'auth ni d'audit
-    // WS2 ajoutera la validation du Bearer
-    // WS3 ajoutera l'instrumentation pino-http
-
-    const server: Server = buildMcpServer({ sessionId });
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => sessionId,
-    });
-
-    res.on("close", () => transport.close());
-    await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
-  });
-
-  const port = Number(process.env.ELIGRAPH_HTTP_PORT ?? 3000);
-  const host = process.env.ELIGRAPH_HTTP_HOST ?? "0.0.0.0";
-  app.listen(port, host, () => {
-    logger.info({ port, host }, "EliGraph HTTP server listening");
-  });
-}
-```
-
-**Étape 3 — Test bout-en-bout avec MCP Inspector**
-
+**Test manuel :**
 ```bash
-# Terminal 1 : démarrer EliGraph en mode HTTP
-ELIGRAPH_TRANSPORT=http npm run start
-
-# Terminal 2 : connecter MCP Inspector
-npx @modelcontextprotocol/inspector
-# → URL: http://localhost:3000/mcp
-# → Tester l'appel à un outil Graph
+ELIGRAPH_TRANSPORT=http USE_CLIENT_TOKEN=true npm start
+# → POST http://localhost:3000/mcp avec body initialize MCP
+# → Vérifier header Mcp-Session-Id dans la réponse
 ```
+
+## 8. WS2 — détail (Config Zod + refus app-only)
+
+**Objectif :** centraliser toute la configuration dans `src/config/env.ts` validée par Zod
+au démarrage, et implémenter le refus explicite du mode app-only.
+
+**Étape 1 — `src/config/env.ts`**
+
+Remplace tous les `process.env.X` dispersés dans `main.ts`. Le module exporte un objet
+`config` typé, validé à l'import. Si une variable obligatoire manque ou est invalide,
+le process exit(1) avec un message clair avant de démarrer quoi que ce soit.
+
+Variables à valider :
+- `ELIGRAPH_TRANSPORT` : `"stdio" | "http"`, défaut `"stdio"`
+- `ELIGRAPH_HTTP_PORT` : entier 1–65535, défaut `3000`
+- `ELIGRAPH_HTTP_HOST` : string, défaut `"127.0.0.1"`
+- `ELIGRAPH_LOG_LEVEL` : `"trace"|"debug"|"info"|"warn"|"error"`, défaut `"info"`
+- `ELIGRAPH_ALLOW_APP_ONLY` : boolean, défaut `false`
+- `TENANT_ID`, `CLIENT_ID` : string optionnels
+- `CLIENT_SECRET` : string optionnel (présence → app-only si pas OBO)
+- `USE_CLIENT_TOKEN`, `USE_INTERACTIVE`, `USE_CERTIFICATE` : boolean, défaut `false`
+- `ACCESS_TOKEN`, `REDIRECT_URI`, `CERTIFICATE_PATH`, `CERTIFICATE_PASSWORD` : optionnels
+- `USE_GRAPH_BETA` : boolean, défaut `true`
+
+**Étape 2 — Refus app-only**
+
+Si `CLIENT_SECRET` est fourni ET `USE_CLIENT_TOKEN=false` ET `USE_INTERACTIVE=false` :
+c'est du mode `ClientCredentials` (app-only). Si `ELIGRAPH_ALLOW_APP_ONLY=false` (défaut),
+logger un warning explicite et `process.exit(1)`.
+
+```
+[ELIGRAPH] FATAL: App-only authentication (CLIENT_SECRET without OBO) is disabled.
+Set ELIGRAPH_ALLOW_APP_ONLY=true to opt in explicitly.
+Refusing to start — see ARCHITECTURE.md §8 for details.
+```
+
+**Étape 3 — Refactoring `main.ts`**
+
+Remplacer tous les `process.env.X` par des imports de `config`. La logique de
+sélection du mode auth reste dans `main.ts` mais s'appuie sur les valeurs typées.
 
 ## 8. Risques identifiés
 
