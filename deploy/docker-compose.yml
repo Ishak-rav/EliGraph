@@ -46,6 +46,61 @@ services:
     profiles:
       - certbot   # never started by `docker compose up` unless --profile certbot
 
+  # ---------------------------------------------------------------------------
+  # Observability stack — start with: docker compose --profile observability up
+  #
+  # Prerequisites:
+  #   - Set ELIGRAPH_AUDIT_FILE=/var/log/eligraph/audit.log in .env so that
+  #     EliGraph writes structured JSON logs to the shared `logs` volume.
+  #   - Access Grafana via SSH tunnel: ssh -L 3001:localhost:3001 user@vps
+  #     then open http://localhost:3001 (default login: admin / see GRAFANA_PASSWORD)
+  # ---------------------------------------------------------------------------
+  loki:
+    image: grafana/loki:3.0.0
+    restart: unless-stopped
+    expose:
+      - "3100"
+    volumes:
+      - ./loki/loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    networks:
+      - internal
+    command: -config.file=/etc/loki/local-config.yaml
+    profiles:
+      - observability
+
+  promtail:
+    image: grafana/promtail:3.0.0
+    restart: unless-stopped
+    volumes:
+      - ./promtail/promtail-config.yaml:/etc/promtail/config.yml:ro
+      - logs:/var/log/eligraph:ro   # same volume as eligraph, read-only
+    networks:
+      - internal
+    depends_on:
+      - loki
+    profiles:
+      - observability
+
+  grafana:
+    image: grafana/grafana:11.0.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3000"   # bound to loopback — access via SSH tunnel only
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - internal
+    depends_on:
+      - loki
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-changeme}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    profiles:
+      - observability
+
 networks:
   internal:
     driver: bridge
@@ -54,3 +109,5 @@ volumes:
   logs:
   certbot-certs:
   certbot-www:
+  loki-data:
+  grafana-data:
