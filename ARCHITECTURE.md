@@ -169,10 +169,10 @@ eligraph/
 | WS1 | Transport HTTP Streamable `/mcp` | ✅ Terminé | WS0 | PR #4 en cours de CI — `ELIGRAPH_TRANSPORT=http\|stdio` |
 | WS2 | Config Zod centralisée + refus app-only | ✅ Terminé | WS1 | PR #5 — `src/config/env.ts`, guard app-only |
 | WS3 | Audit trail JSON (stdout + fichier rotatif) | ✅ Terminé | WS0 | PR #6 — pino, redaction, audit structuré |
-| WS4 | Observabilité Grafana + Loki | 🔄 En cours | WS3 | Branche `ws4-observability` |
+| WS4 | Observabilité Grafana + Loki | ✅ Terminé | WS3 | PR #9 — Loki, Promtail, Grafana dashboard |
 | WS5 | Business rules / guardrails | ✅ Terminé | WS3 | PR #8 — engine block/confirm/warn, 8 règles par défaut |
 | WS6 | Déploiement VPS + nginx + Let's Encrypt | ✅ Terminé | WS1, WS2, WS3 | PR #7 — Dockerfile, nginx, certbot, deploy.yml |
-| WS7 | Connecteur Copilot Studio | ⏳ À faire | WS6 | |
+| WS7 | Connecteur Copilot Studio | 🔄 En cours | WS6 | Branche `ws7-copilot` |
 
 **Total MVP (WS0 à WS3 + WS6)** : environ 10 à 17 jours de dev effectif.
 
