@@ -1,0 +1,60 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+  log_level: warn
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: eligraph-audit
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: eligraph
+          host: eligraph
+          __path__: /var/log/eligraph/*.log
+
+    pipeline_stages:
+      # Parse pino JSON lines
+      - json:
+          expressions:
+            level: level          # pino numeric: 30=info 40=warn 50=error
+            event: event          # tool_call | tool_result | guardrail_* | ...
+            mcp_tool: mcp_tool
+            api_type: api_type
+            method: method
+            path: path
+            duration_ms: duration_ms
+            success: success
+            rule_id: rule_id
+
+      # Promote parsed fields as Loki labels for fast filtering
+      - labels:
+          event:
+          api_type:
+          method:
+
+      # Map pino numeric level to a readable label
+      - template:
+          source: level
+          template: |
+            {{ if eq .Value "10" }}trace
+            {{ else if eq .Value "20" }}debug
+            {{ else if eq .Value "30" }}info
+            {{ else if eq .Value "40" }}warn
+            {{ else if eq .Value "50" }}error
+            {{ else if eq .Value "60" }}fatal
+            {{ else }}unknown{{ end }}
+
+      - labels:
+          level:
+
+      # Use pino timestamp as log timestamp
+      - timestamp:
+          source: time
+          format: UnixMs
