@@ -168,10 +168,10 @@ eligraph/
 | WS0 | Setup repo, fork, CI minimale, rebranding Lokka → EliGraph | ✅ Terminé | — | Mergé sur `main` (PR #1 à #3) |
 | WS1 | Transport HTTP Streamable `/mcp` | ✅ Terminé | WS0 | PR #4 en cours de CI — `ELIGRAPH_TRANSPORT=http\|stdio` |
 | WS2 | Config Zod centralisée + refus app-only | ✅ Terminé | WS1 | PR #5 — `src/config/env.ts`, guard app-only |
-| WS3 | Audit trail JSON (stdout + fichier rotatif) | 🔄 En cours | WS0 | Branche `ws3-audit` |
+| WS3 | Audit trail JSON (stdout + fichier rotatif) | ✅ Terminé | WS0 | PR #6 — pino, redaction, audit structuré |
 | WS4 | Observabilité Grafana + Loki | ⏳ À faire | WS3 | |
 | WS5 | Business rules / guardrails | ⏳ À faire | WS3 | |
-| WS6 | Déploiement VPS + nginx + Let's Encrypt | ⏳ À faire | WS1, WS2, WS3 | |
+| WS6 | Déploiement VPS + nginx + Let's Encrypt | 🔄 En cours | WS1, WS2, WS3 | Branche `ws6-deploy` |
 | WS7 | Connecteur Copilot Studio | ⏳ À faire | WS6 | |
 
 **Total MVP (WS0 à WS3 + WS6)** : environ 10 à 17 jours de dev effectif.

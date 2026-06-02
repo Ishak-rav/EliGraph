@@ -15,6 +15,10 @@ export async function startHttpTransport(
   const app = express();
   app.use(express.json());
 
+  app.get("/healthz", (_req, res) => {
+    res.status(200).json({ ok: true });
+  });
+
   // Session map: session ID -> transport
   const sessions = new Map<string, StreamableHTTPServerTransport>();
 
