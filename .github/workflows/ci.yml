@@ -39,9 +39,13 @@ jobs:
 
       - name: Type check
         run: npx tsc --noEmit
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
 
       - name: Build
         run: npm run build
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
 
       - name: Run tests
         run: npm test --if-present
